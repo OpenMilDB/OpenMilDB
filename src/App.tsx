@@ -4,16 +4,24 @@ import { useCesiumViewer } from './hooks/useCesiumViewer';
 import { useMapCamera } from './hooks/useMapCamera';
 import { useMapLayers } from './hooks/useMapLayers';
 import { useMapTerrain } from './hooks/useMapTerrain';
+import { useCoordinateTracker } from './hooks/useCoordinateTracker';
 import { LayerPicker } from './components/LayerPicker';
 import { Compass } from './components/Compass';
-
-const hasIonToken = Boolean(import.meta.env.VITE_CESIUM_ION_TOKEN);
-const hasCartoKey = Boolean(import.meta.env.VITE_CARTO_API_KEY);
-const INITIAL_BASEMAP = hasIonToken ? 'bing_aerial' : 'blue_marble_nasa';
+import { CoordinateHUD } from './components/CoordinateHUD';
 
 export default function App() {
   const { viewer, isReady } = useCesiumViewer('cesiumContainer');
   const { adjustTilt, resetTilt, resetNorthNadir } = useMapCamera(viewer);
+  const coords = useCoordinateTracker(viewer, isReady);
+
+  const hasIonToken = Boolean(
+    window.APP_CONFIG?.CESIUM_ION_TOKEN || import.meta.env.VITE_CESIUM_ION_TOKEN
+  );
+  const hasCartoKey = Boolean(
+    window.APP_CONFIG?.CARTO_API_KEY || import.meta.env.VITE_CARTO_API_KEY
+  );
+
+  const INITIAL_BASEMAP = hasIonToken ? 'bing_aerial' : 'blue_marble_nasa';
 
   const [activeBaseMapId, setActiveBaseMapId] = useState(INITIAL_BASEMAP);
   const [overlays, setOverlays] = useState(DEFAULT_OVERLAYS);
@@ -164,28 +172,11 @@ export default function App() {
             <Compass viewer={viewer} onResetNorth={resetNorthNadir} />
           )}
 
-          {/* Bottom-Left Tile Provider HUD Indicator */}
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 12,
-              left: 12,
-              zIndex: 90,
-              background: 'rgba(0, 0, 0, 0.75)',
-              backdropFilter: 'blur(4px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: 4,
-              padding: '4px 8px',
-              color: '#0adb6b',
-              fontFamily: 'monospace',
-              fontSize: 11,
-              pointerEvents: 'none',
-            }}
-          >
-            ACTIVE PROVIDER: <span style={{ color: '#fff' }}>{activeBaseMap.name}</span>
-          </div>
-
+          {/* Cesium Canvas Container */}
           <div id="cesiumContainer" style={{ width: '100%', height: '100%' }} />
+
+          {/* Bottom-Left Collapsible Tactical Coordinate HUD */}
+          <CoordinateHUD coords={coords} activeBaseMapName={activeBaseMap.name} />
         </div>
       </div>
 
