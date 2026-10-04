@@ -299,8 +299,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
               >
                 Tilt Down (-15°)
               </button>
-            </div>
-            <div style={{ display: 'flex', gap: '6px' }}>
               <button
                 onClick={onResetTilt}
                 style={{
@@ -315,21 +313,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
                 }}
               >
                 Top-Down (Nadir)
-              </button>
-              <button
-                onClick={onResetNorthNadir}
-                style={{
-                  flex: 1,
-                  backgroundColor: '#2a2a2a',
-                  color: '#ffffff',
-                  border: '1px solid #444444',
-                  borderRadius: '3px',
-                  padding: '5px',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                }}
-              >
-                Reset North
               </button>
             </div>
           </div>

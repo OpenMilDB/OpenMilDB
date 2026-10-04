@@ -42,19 +42,24 @@ function createWindow() {
   // Opens the browser debugger layout split pane natively on launch
   mainWindow.webContents.openDevTools();
 
-  // Clear memory tracking references when the container window shuts down
+  // Clear memory tracking references and trigger application exit when window shuts down
   mainWindow.on('closed', () => {
     mainWindow = null;
+    app.quit();
   });
 }
 
 // Electron engine launch hook setup orchestration
 app.whenReady().then(createWindow);
 
+// Quit immediately when all windows are closed across all operating systems (including macOS)
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
+});
+
+// Explicitly terminate the Node process to inform concurrently to shut down sub-services
+app.on('before-quit', () => {
+  process.exit(0);
 });
 
 app.on('activate', () => {
