@@ -1,0 +1,83 @@
+{
+  "name": "openmildb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.ts",
+  "scripts": {
+    "clean": "./clean-ports.sh",
+    "postinstall": "xattr -cr ./node_modules/electron/ && codesign --force --deep --sign - ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron || true",
+    "dev:vite": "vite",
+    "dev:electron": "VITE_DEV_SERVER_URL=http://127.0.0.1:3000 ./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron --node-options=\"--import tsx\" .",
+    "dev": "npm run clean && concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "cesium": "^1.146.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "satellite.js": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^8.2.2",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "tsx": "^4.15.0",
+    "typescript": "^5.4.5",
+    "vite": "^8.3.2",
+    "vite-plugin-cesium": "^1.2.2",
+    "vite-plugin-static-copy": "^4.1.1"
+  },
+  "allowScripts": {
+    "electron@44.5.1": true,
+    "fsevents@2.3.3": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.28.2": true
+  },
+  "build": {
+    "appId": "com.openmildb.app",
+    "productName": "OpenMilDB",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "package.json",
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "extraFiles": [
+      {
+        "from": "node_modules/cesium/Build/Cesium/Workers",
+        "to": "dist/cesiumStatic/Workers"
+      },
+      {
+        "from": "node_modules/cesium/Build/Cesium/ThirdParty",
+        "to": "dist/cesiumStatic/ThirdParty"
+      },
+      {
+        "from": "node_modules/cesium/Build/Cesium/Assets",
+        "to": "dist/cesiumStatic/Assets"
+      },
+      {
+        "from": "node_modules/cesium/Build/Cesium/Widgets",
+        "to": "dist/cesiumStatic/Widgets"
+      },
+      {
+        "from": "node_modules/cesium/Build/Cesium/Cesium.js",
+        "to": "dist/cesiumStatic/Cesium.js"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis"]
+    }
+  }
+}
