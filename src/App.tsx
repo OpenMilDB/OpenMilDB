@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { BASE_MAPS, DEFAULT_OVERLAYS } from './config/mapConfig';
+import { INITIAL_TACTICAL_UNITS } from './config/mockUnits';
 import { useCesiumViewer } from './hooks/useCesiumViewer';
 import { useMapCamera } from './hooks/useMapCamera';
 import { useMapLayers } from './hooks/useMapLayers';
 import { useMapTerrain } from './hooks/useMapTerrain';
 import { useCoordinateTracker } from './hooks/useCoordinateTracker';
+import { useSymbolLayer } from './hooks/useSymbolLayer';
 import { LayerPicker } from './components/LayerPicker';
 import { Compass } from './components/Compass';
 import { CoordinateHUD } from './components/CoordinateHUD';
@@ -30,6 +32,9 @@ export default function App() {
   const [sunlightEnabled, setSunlightEnabled] = useState(false);
   const [hillshadingEnabled, setHillshadingEnabled] = useState(true);
 
+  // Tactical Unit State for MIL-STD-2525 Symbology
+  const [units] = useState(INITIAL_TACTICAL_UNITS);
+
   // Panel Size States
   const [treeWidth, setTreeWidth] = useState<number>(300);
   const [telemetryHeight, setTelemetryHeight] = useState<number>(200);
@@ -40,9 +45,10 @@ export default function App() {
 
   const appRef = useRef<HTMLDivElement>(null);
 
-  // Sync Layers & Terrain State
+  // Sync Layers, Terrain & Tactical Symbols
   useMapLayers(viewer, isReady, activeBaseMapId, overlays);
   useMapTerrain(viewer, isReady, terrainEnabled, sunlightEnabled, hillshadingEnabled);
+  useSymbolLayer(viewer, isReady, units);
 
   // Helper to find display name of active provider
   const activeBaseMap = BASE_MAPS.find((m) => m.id === activeBaseMapId) || BASE_MAPS[0];
@@ -128,7 +134,13 @@ export default function App() {
           }}
         >
           <h3 style={{ margin: '0 0 10px 0', fontSize: 14, color: '#888' }}>ORBAT TREE</h3>
-          <div style={{ fontSize: 13, color: '#aaa' }}>• Command Hierarchy</div>
+          <div style={{ fontSize: 13, color: '#aaa' }}>
+            {units.map((unit) => (
+              <div key={unit.id} style={{ marginBottom: 6 }}>
+                • {unit.name} ({unit.higherFormation || 'UNASSIGNED'})
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Vertical Resize Slider */}
@@ -206,7 +218,7 @@ export default function App() {
       >
         <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#888' }}>TELEMETRY LOG</h3>
         <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0adb6b' }}>
-          [OK] Map terrain and lighting sync online.
+          [OK] Map terrain, lighting, and MIL-STD-2525 unit layers online.
         </div>
       </div>
     </div>
