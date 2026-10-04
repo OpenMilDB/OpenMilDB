@@ -16,6 +16,8 @@ interface LayerPickerProps {
   onTiltChange: (deltaDegrees: number) => void;
   onResetTilt: () => void;
   onResetNorthNadir: () => void;
+  hasIonToken: boolean;
+  hasCartoKey: boolean;
 }
 
 export const LayerPicker: React.FC<LayerPickerProps> = ({
@@ -33,6 +35,8 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
   onTiltChange,
   onResetTilt,
   onResetNorthNadir,
+  hasIonToken,
+  hasCartoKey,
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
 
@@ -46,7 +50,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       }}
     >
-      {/* Main Toggle Button */}
       <button
         onClick={() => setIsOpen((prev) => !prev)}
         style={{
@@ -71,7 +74,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
         </span>
       </button>
 
-      {/* Control Panel Dropdown */}
       {isOpen && (
         <div
           style={{
@@ -86,7 +88,7 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
             backdropFilter: 'blur(8px)',
           }}
         >
-          {/* Section: Base Maps */}
+          {/* Base Maps */}
           <div style={{ marginBottom: '14px' }}>
             <div
               style={{
@@ -100,34 +102,59 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
             >
               Base Maps
             </div>
-            {baseMaps.map((map) => (
-              <label
-                key={map.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '4px 0',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  color: activeBaseMapId === map.id ? '#4dabf7' : '#cccccc',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="basemap"
-                  checked={activeBaseMapId === map.id}
-                  onChange={() => onSelectBaseMap(map.id)}
-                  style={{ accentColor: '#4dabf7', cursor: 'pointer' }}
-                />
-                {map.name}
-              </label>
-            ))}
+            {baseMaps.map((map) => {
+              const isIonKeyRequired = map.type === 'ion' && !hasIonToken;
+
+              return (
+                <label
+                  key={map.id}
+                  title={isIonKeyRequired ? 'Requires VITE_CESIUM_ION_TOKEN in .env' : map.name}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    padding: '4px 0',
+                    fontSize: '13px',
+                    cursor: isIonKeyRequired ? 'not-allowed' : 'pointer',
+                    opacity: isIonKeyRequired ? 0.4 : 1,
+                    color: activeBaseMapId === map.id ? '#4dabf7' : '#cccccc',
+                    transition: 'opacity 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="radio"
+                      name="basemap"
+                      disabled={isIonKeyRequired}
+                      checked={activeBaseMapId === map.id}
+                      onChange={() => onSelectBaseMap(map.id)}
+                      style={{ accentColor: '#4dabf7', cursor: isIonKeyRequired ? 'not-allowed' : 'pointer' }}
+                    />
+                    <span>{map.name}</span>
+                  </div>
+                  {isIonKeyRequired && (
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        background: '#333333',
+                        color: '#888888',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      NO KEY
+                    </span>
+                  )}
+                </label>
+              );
+            })}
           </div>
 
           <hr style={{ border: '0', borderTop: '1px solid #333333', margin: '10px 0' }} />
 
-          {/* Section: Vector Overlays */}
+          {/* Overlays */}
           <div style={{ marginBottom: '14px' }}>
             <div
               style={{
@@ -141,33 +168,58 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
             >
               Overlays
             </div>
-            {overlays.map((overlay) => (
-              <label
-                key={overlay.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '4px 0',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  color: '#cccccc',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={overlay.visible}
-                  onChange={() => onToggleOverlay(overlay.id)}
-                  style={{ accentColor: '#4dabf7', cursor: 'pointer' }}
-                />
-                {overlay.name}
-              </label>
-            ))}
+            {overlays.map((overlay) => {
+              const isCartoKeyRequired = Boolean(overlay.requiresCartoKey && !hasCartoKey);
+
+              return (
+                <label
+                  key={overlay.id}
+                  title={isCartoKeyRequired ? 'Requires VITE_CARTO_API_KEY in .env' : overlay.name}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '8px',
+                    padding: '4px 0',
+                    fontSize: '13px',
+                    cursor: isCartoKeyRequired ? 'not-allowed' : 'pointer',
+                    opacity: isCartoKeyRequired ? 0.4 : 1,
+                    color: '#cccccc',
+                    transition: 'opacity 0.2s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="checkbox"
+                      disabled={isCartoKeyRequired}
+                      checked={overlay.visible}
+                      onChange={() => onToggleOverlay(overlay.id)}
+                      style={{ accentColor: '#4dabf7', cursor: isCartoKeyRequired ? 'not-allowed' : 'pointer' }}
+                    />
+                    <span>{overlay.name}</span>
+                  </div>
+                  {isCartoKeyRequired && (
+                    <span
+                      style={{
+                        fontSize: '9px',
+                        background: '#333333',
+                        color: '#888888',
+                        padding: '1px 5px',
+                        borderRadius: '3px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      NO KEY
+                    </span>
+                  )}
+                </label>
+              );
+            })}
           </div>
 
           <hr style={{ border: '0', borderTop: '1px solid #333333', margin: '10px 0' }} />
 
-          {/* Section: Terrain & Lighting */}
+          {/* Terrain & Lighting */}
           <div style={{ marginBottom: '14px' }}>
             <div
               style={{
@@ -182,7 +234,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
               3D Terrain & Lighting
             </div>
 
-            {/* Terrain Toggle */}
             <label
               style={{
                 display: 'flex',
@@ -203,7 +254,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
               Enable 3D Terrain Mesh
             </label>
 
-            {/* Sunlight Option (Grayed out if terrain disabled) */}
             <label
               style={{
                 display: 'flex',
@@ -227,7 +277,6 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
               Sunlight & Dynamic Shadows
             </label>
 
-            {/* Hillshading Option (Grayed out if terrain disabled) */}
             <label
               style={{
                 display: 'flex',
@@ -254,7 +303,7 @@ export const LayerPicker: React.FC<LayerPickerProps> = ({
 
           <hr style={{ border: '0', borderTop: '1px solid #333333', margin: '10px 0' }} />
 
-          {/* Section: Camera Tilt Controls */}
+          {/* Camera Controls */}
           <div>
             <div
               style={{

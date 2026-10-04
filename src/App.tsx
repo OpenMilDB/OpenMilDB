@@ -7,22 +7,26 @@ import { useMapTerrain } from './hooks/useMapTerrain';
 import { LayerPicker } from './components/LayerPicker';
 import { Compass } from './components/Compass';
 
+const hasIonToken = Boolean(import.meta.env.VITE_CESIUM_ION_TOKEN);
+const hasCartoKey = Boolean(import.meta.env.VITE_CARTO_API_KEY);
+const INITIAL_BASEMAP = hasIonToken ? 'bing_aerial' : 'blue_marble_nasa';
+
 export default function App() {
   const { viewer, isReady } = useCesiumViewer('cesiumContainer');
   const { adjustTilt, resetTilt, resetNorthNadir } = useMapCamera(viewer);
 
-  const [activeBaseMapId, setActiveBaseMapId] = useState('usgs_topo');
+  const [activeBaseMapId, setActiveBaseMapId] = useState(INITIAL_BASEMAP);
   const [overlays, setOverlays] = useState(DEFAULT_OVERLAYS);
 
   const [terrainEnabled, setTerrainEnabled] = useState(true);
   const [sunlightEnabled, setSunlightEnabled] = useState(false);
   const [hillshadingEnabled, setHillshadingEnabled] = useState(true);
 
-  // Panel Size States (In Pixels)
+  // Panel Size States
   const [treeWidth, setTreeWidth] = useState<number>(300);
   const [telemetryHeight, setTelemetryHeight] = useState<number>(200);
 
-  // Dragging Active States
+  // Resizing Active States
   const [isResizingTree, setIsResizingTree] = useState<boolean>(false);
   const [isResizingTelemetry, setIsResizingTelemetry] = useState<boolean>(false);
 
@@ -32,14 +36,15 @@ export default function App() {
   useMapLayers(viewer, isReady, activeBaseMapId, overlays);
   useMapTerrain(viewer, isReady, terrainEnabled, sunlightEnabled, hillshadingEnabled);
 
-  // Force Cesium canvas to resize on panel drag
+  // Helper to find display name of active provider
+  const activeBaseMap = BASE_MAPS.find((m) => m.id === activeBaseMapId) || BASE_MAPS[0];
+
   const triggerCesiumResize = useCallback(() => {
     if (viewer && !viewer.isDestroyed()) {
       viewer.resize();
     }
   }, [viewer]);
 
-  // Drag Handlers
   const handleMouseDownTree = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizingTree(true);
@@ -53,7 +58,6 @@ export default function App() {
   const handleMouseMove = useCallback(
     (e: MouseEvent) => {
       if (isResizingTree) {
-        // Clamp tree width between 180px and 600px
         const newWidth = Math.min(Math.max(e.clientX, 180), 600);
         setTreeWidth(newWidth);
         triggerCesiumResize();
@@ -62,7 +66,6 @@ export default function App() {
       if (isResizingTelemetry && appRef.current) {
         const appBounds = appRef.current.getBoundingClientRect();
         const newHeight = appBounds.bottom - e.clientY;
-        // Clamp telemetry height between 60px and 500px
         setTelemetryHeight(Math.min(Math.max(newHeight, 60), 500));
         triggerCesiumResize();
       }
@@ -76,7 +79,6 @@ export default function App() {
     triggerCesiumResize();
   }, [triggerCesiumResize]);
 
-  // Global mousemove and mouseup listeners
   useEffect(() => {
     if (isResizingTree || isResizingTelemetry) {
       window.addEventListener('mousemove', handleMouseMove);
@@ -105,7 +107,6 @@ export default function App() {
         userSelect: isResizingTree || isResizingTelemetry ? 'none' : 'auto',
       }}
     >
-      {/* Upper Section: Tree + Cesium Map Viewport */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* Left ORBAT Tree Panel */}
         <div
@@ -122,7 +123,7 @@ export default function App() {
           <div style={{ fontSize: 13, color: '#aaa' }}>• Command Hierarchy</div>
         </div>
 
-        {/* Vertical Resize Slider (Tree Divider) */}
+        {/* Vertical Resize Slider */}
         <div
           onMouseDown={handleMouseDownTree}
           style={{
@@ -134,7 +135,7 @@ export default function App() {
           }}
         />
 
-        {/* Cesium Map Container */}
+        {/* Cesium Map Viewport */}
         <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
           <LayerPicker
             baseMaps={BASE_MAPS}
@@ -155,17 +156,40 @@ export default function App() {
             onTiltChange={adjustTilt}
             onResetTilt={resetTilt}
             onResetNorthNadir={resetNorthNadir}
+            hasIonToken={hasIonToken}
+            hasCartoKey={hasCartoKey}
           />
 
           {isReady && viewer && (
             <Compass viewer={viewer} onResetNorth={resetNorthNadir} />
           )}
 
+          {/* Bottom-Left Tile Provider HUD Indicator */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              left: 12,
+              zIndex: 90,
+              background: 'rgba(0, 0, 0, 0.75)',
+              backdropFilter: 'blur(4px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: 4,
+              padding: '4px 8px',
+              color: '#0adb6b',
+              fontFamily: 'monospace',
+              fontSize: 11,
+              pointerEvents: 'none',
+            }}
+          >
+            ACTIVE PROVIDER: <span style={{ color: '#fff' }}>{activeBaseMap.name}</span>
+          </div>
+
           <div id="cesiumContainer" style={{ width: '100%', height: '100%' }} />
         </div>
       </div>
 
-      {/* Horizontal Resize Slider (Telemetry Divider) */}
+      {/* Horizontal Resize Slider */}
       <div
         onMouseDown={handleMouseDownTelemetry}
         style={{
@@ -177,7 +201,7 @@ export default function App() {
         }}
       />
 
-      {/* Bottom Telemetry Log Panel */}
+      {/* Telemetry Log Panel */}
       <div
         style={{
           height: `${telemetryHeight}px`,
