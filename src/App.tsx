@@ -2,7 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PanelDimensions } from './types/layout';
 import { BaseMapOption, OverlayOption } from './types/layers';
 import { LayerPicker } from './components/LayerPicker';
-import { createBlankTileDiscardPolicy, attachFallbackErrorHandler } from './utils/cesiumLayers';
+import {
+  attachFallbackErrorHandler,
+  createNonIonTerrainProvider,
+} from './utils/cesiumLayers';
 
 const MAP_OPTIONS: BaseMapOption[] = [
   {
@@ -14,7 +17,7 @@ const MAP_OPTIONS: BaseMapOption[] = [
   },
   {
     id: 'satellite_composite',
-    name: 'Satellite / Aerial (ArcGIS + USGS NAIP High-Res)',
+    name: 'Satellite / Aerial Imagery',
     category: 'imagery',
     type: 'urlTemplate',
   },
@@ -23,7 +26,7 @@ const MAP_OPTIONS: BaseMapOption[] = [
 const INITIAL_OVERLAYS: OverlayOption[] = [
   {
     id: 'esri_transportation',
-    name: 'Esri Roads & Highways Network (Transparent)',
+    name: 'Esri Roads & Highways Network',
     type: 'urlTemplate',
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
     visible: true,
@@ -57,53 +60,71 @@ export default function App() {
   const [activeBaseMapId, setActiveBaseMapId] = useState<string>('osm');
   const [overlays, setOverlays] = useState<OverlayOption[]>(INITIAL_OVERLAYS);
 
+  // Terrain & Lighting State
+  const [terrainEnabled, setTerrainEnabled] = useState<boolean>(true);
+  const [sunlightEnabled, setSunlightEnabled] = useState<boolean>(false);
+  const [hillshadingEnabled, setHillshadingEnabled] = useState<boolean>(true);
+
+  const applyLightingAndShading = () => {
+    const Cesium = (window as any).Cesium;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    const globe = viewer.scene.globe;
+
+    globe.enableLighting = sunlightEnabled;
+
+    if (sunlightEnabled) {
+      globe.nightColor = new Cesium.Color(0.25, 0.25, 0.3, 1.0);
+      globe.lightingFadeOutDistance = 10000000.0;
+      globe.lightingFadeInDistance = 20000000.0;
+
+      if (viewer.scene.postProcessStages?.ambientOcclusion) {
+        viewer.scene.postProcessStages.ambientOcclusion.enabled = true;
+        viewer.scene.postProcessStages.ambientOcclusion.uniforms.intensity = 3.0;
+      }
+    }
+
+    globe.showGroundAtmosphere = hillshadingEnabled;
+    globe.dynamicAtmosphereLighting = hillshadingEnabled;
+    globe.dynamicAtmosphereLightingFromSun = sunlightEnabled && hillshadingEnabled;
+  };
+
   const applyBaseLayerMode = (mode: 'map' | 'imagery') => {
     const Cesium = (window as any).Cesium;
     const viewer = viewerRef.current;
-    if (!viewer || !Cesium) return;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
 
-    // Purge base/imagery layers while preserving system initialization
     viewer.imageryLayers.removeAll(false);
 
     if (mode === 'map') {
-      // Vector Mode: Clean OSM Base
       const osmProvider = new Cesium.OpenStreetMapImageryProvider({
         url: 'https://tile.openstreetmap.org/',
+        maximumLevel: 18,
       });
+
+      attachFallbackErrorHandler(osmProvider);
       viewer.imageryLayers.addImageryProvider(osmProvider, 0);
     } else {
-      // Imagery Mode: Tier 0 Base + Tier 1 High-Res Regional Overlay
-      
-      // Tier 0: Global Esri World Imagery (100% Globe Coverage)
+      // Direct ArcGIS World Imagery (includes NAIP high-res imagery internally)
       const arcgisProvider = new Cesium.UrlTemplateImageryProvider({
         url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         maximumLevel: 19,
       });
+      attachFallbackErrorHandler(arcgisProvider);
       viewer.imageryLayers.addImageryProvider(arcgisProvider, 0);
-
-      // Tier 1: High-Detail USGS NAIP (Overlays Tier 0 where available)
-      const usgsNaipProvider = new Cesium.WebMapServiceImageryProvider({
-        url: 'https://imagery.nationalmap.gov/arcgis/services/USGSNAIPPlus/ImageServer/WMSServer',
-        layers: 'USGSNAIPPlus',
-        parameters: { transparent: true, format: 'image/png' },
-        maximumLevel: 19,
-        tileDiscardPolicy: createBlankTileDiscardPolicy() as any,
-      });
-
-      // Catch missing regional tiles (HTTP 404/500) and drop through to Tier 0
-      attachFallbackErrorHandler(usgsNaipProvider);
-      viewer.imageryLayers.addImageryProvider(usgsNaipProvider, 1);
     }
 
-    // Re-apply transparent overlays on top of the selected base configuration
+    // Re-attach Overlays (Roads, Boundaries, etc.)
     overlayLayersRef.current.clear();
     overlays.forEach((overlay) => {
       if (overlay.visible && overlay.url) {
         const provider = new Cesium.UrlTemplateImageryProvider({
           url: overlay.url,
-          maximumLevel: 19,
+          maximumLevel: 18,
           hasAlphaChannel: true,
         });
+        attachFallbackErrorHandler(provider);
         const layer = viewer.imageryLayers.addImageryProvider(provider);
         overlayLayersRef.current.set(overlay.id, layer);
       }
@@ -112,11 +133,48 @@ export default function App() {
     activeModeRef.current = mode;
   };
 
+  const updateTerrainState = async (enabled: boolean) => {
+    const Cesium = (window as any).Cesium;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    if (enabled) {
+      try {
+        const terrainProvider = await createNonIonTerrainProvider(Cesium);
+        if (!viewer.isDestroyed() && terrainProvider) {
+          viewer.terrainProvider = terrainProvider;
+          viewer.scene.globe.depthTestAgainstTerrain = true;
+          applyLightingAndShading();
+          return;
+        }
+      } catch (err) {
+        console.warn('Terrain initialization failed:', err);
+      }
+    }
+
+    if (!viewer.isDestroyed()) {
+      try {
+        if (Cesium.EllipsoidTerrainProvider?.fromEllipsoid) {
+          viewer.terrainProvider = await Cesium.EllipsoidTerrainProvider.fromEllipsoid(
+            Cesium.Ellipsoid.WGS84
+          );
+        } else {
+          viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+        }
+      } catch (err) {
+        console.warn('Ellipsoid terrain fallback error:', err);
+      }
+
+      if (viewer.scene?.globe) {
+        viewer.scene.globe.depthTestAgainstTerrain = false;
+        viewer.scene.globe.enableLighting = false;
+      }
+    }
+  };
+
   useEffect(() => {
     const Cesium = (window as any).Cesium;
     if (!Cesium) return;
-
-    Cesium.Ion.defaultAccessToken = '';
 
     const viewer = new Cesium.Viewer('cesiumContainer', {
       animation: false,
@@ -127,12 +185,22 @@ export default function App() {
       homeButton: false,
       sceneModePicker: false,
       navigationHelpButton: false,
+      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
     });
 
     viewerRef.current = viewer;
 
-    // Initialize with vector map mode
     applyBaseLayerMode('map');
+    updateTerrainState(terrainEnabled);
+
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(-121.7603, 46.8523, 10000),
+      orientation: {
+        heading: Cesium.Math.toRadians(45),
+        pitch: Cesium.Math.toRadians(-20),
+        roll: 0,
+      },
+    });
 
     return () => {
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
@@ -141,6 +209,10 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    applyLightingAndShading();
+  }, [sunlightEnabled, hillshadingEnabled]);
 
   const handleSelectBaseMap = (id: string) => {
     const selected = MAP_OPTIONS.find((m) => m.id === id);
@@ -153,7 +225,7 @@ export default function App() {
   const handleToggleOverlay = (id: string) => {
     const Cesium = (window as any).Cesium;
     const viewer = viewerRef.current;
-    if (!viewer || !Cesium) return;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
 
     setOverlays((prev) =>
       prev.map((overlay) => {
@@ -164,9 +236,10 @@ export default function App() {
         if (nextVisibility && overlay.url) {
           const provider = new Cesium.UrlTemplateImageryProvider({
             url: overlay.url,
-            maximumLevel: 19,
+            maximumLevel: 18,
             hasAlphaChannel: true,
           });
+          attachFallbackErrorHandler(provider);
           const layer = viewer.imageryLayers.addImageryProvider(provider);
           overlayLayersRef.current.set(id, layer);
         } else {
@@ -180,6 +253,66 @@ export default function App() {
         return { ...overlay, visible: nextVisibility };
       })
     );
+  };
+
+  const handleToggleTerrain = () => {
+    const nextState = !terrainEnabled;
+    setTerrainEnabled(nextState);
+    updateTerrainState(nextState);
+  };
+
+  const handleToggleSunlight = () => {
+    setSunlightEnabled((prev) => !prev);
+  };
+
+  const handleToggleHillshading = () => {
+    setHillshadingEnabled((prev) => !prev);
+  };
+
+  const handleTiltChange = (deltaDegrees: number) => {
+    const Cesium = (window as any).Cesium;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    const camera = viewer.camera;
+    const currentPitch = Cesium.Math.toDegrees(camera.pitch);
+    const newPitch = Math.min(Math.max(currentPitch + deltaDegrees, -90), -5);
+
+    camera.setView({
+      orientation: {
+        heading: camera.heading,
+        pitch: Cesium.Math.toRadians(newPitch),
+        roll: camera.roll,
+      },
+    });
+  };
+
+  const handleResetTilt = () => {
+    const Cesium = (window as any).Cesium;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    viewer.camera.setView({
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: Cesium.Math.toRadians(-90),
+        roll: 0.0,
+      },
+    });
+  };
+
+  const handleResetNorthNadir = () => {
+    const Cesium = (window as any).Cesium;
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !Cesium) return;
+
+    viewer.camera.setView({
+      orientation: {
+        heading: 0.0,
+        pitch: Cesium.Math.toRadians(-90),
+        roll: 0.0,
+      },
+    });
   };
 
   return (
@@ -196,7 +329,6 @@ export default function App() {
       }}
     >
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Left ORBAT Panel */}
         <div
           style={{
             width: dim.leftWidthPx,
@@ -213,7 +345,6 @@ export default function App() {
           <div style={{ fontSize: '13px', color: '#aaaaaa' }}>• Command Hierarchy</div>
         </div>
 
-        {/* Spatial Viewport */}
         <div style={{ flex: 1, position: 'relative', background: '#000000', overflow: 'hidden' }}>
           <LayerPicker
             baseMaps={MAP_OPTIONS}
@@ -221,13 +352,21 @@ export default function App() {
             onSelectBaseMap={handleSelectBaseMap}
             overlays={overlays}
             onToggleOverlay={handleToggleOverlay}
+            terrainEnabled={terrainEnabled}
+            onToggleTerrain={handleToggleTerrain}
+            sunlightEnabled={sunlightEnabled}
+            onToggleSunlight={handleToggleSunlight}
+            hillshadingEnabled={hillshadingEnabled}
+            onToggleHillshading={handleToggleHillshading}
+            onTiltChange={handleTiltChange}
+            onResetTilt={handleResetTilt}
+            onResetNorthNadir={handleResetNorthNadir}
           />
 
           <div id="cesiumContainer" style={{ width: '100%', height: '100%' }} />
         </div>
       </div>
 
-      {/* Bottom Telemetry Log */}
       <div
         style={{
           height: dim.bottomHeightPx,
@@ -242,7 +381,7 @@ export default function App() {
           TELEMETRY LOG
         </h3>
         <div style={{ fontSize: '12px', fontFamily: 'monospace', color: '#0adb6b' }}>
-          [OK] Multi-source layer stack online. Transparent reference overlays active.
+          [OK] Imagery and terrain providers ready.
         </div>
       </div>
     </div>

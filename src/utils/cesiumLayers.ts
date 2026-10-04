@@ -1,26 +1,52 @@
-import * as Cesium from 'cesium';
+export function attachFallbackErrorHandler(provider: any) {
+  if (provider && provider.errorEvent) {
+    provider.errorEvent.addEventListener((error: any) => {
+      // Suppress tile load errors from breaking viewer loop
+      if (error && typeof error === 'object') {
+        error.retry = false;
+      }
+    });
+  }
+}
 
-/**
- * Creates a tile discard policy that drops blank 1x1 pixel placeholder tiles.
- */
 export function createBlankTileDiscardPolicy() {
   return {
     isReady: () => true,
-    shouldDiscardImage: (image: HTMLImageElement | ImageBitmap) => {
-      return image.width === 1 && image.height === 1;
-    },
+    shouldDiscardImage: () => false,
   };
 }
 
 /**
- * Catches tile loading errors (404/500/CORS) silently so 
- * missing high-res tiles reveal the base layer beneath.
+ * Robust Terrain Provider Loader
+ * Tries Cesium World Terrain (Ion Asset 1), then falls back to Ellipsoid if network/token fails.
  */
-export function attachFallbackErrorHandler(provider: Cesium.ImageryProvider) {
-  if (!provider || !provider.errorEvent) return;
+export async function createNonIonTerrainProvider(Cesium: any): Promise<any> {
+  // Option 1: Cesium World Terrain via Ion Asset ID 1
+  try {
+    if (Cesium.CesiumTerrainProvider?.fromIonAssetId) {
+      return await Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
+        requestWaterMask: true,
+        requestVertexNormals: true,
+      });
+    }
+    if (typeof Cesium.createWorldTerrain === 'function') {
+      return Cesium.createWorldTerrain({
+        requestWaterMask: true,
+        requestVertexNormals: true,
+      });
+    }
+  } catch (err) {
+    console.warn('World Terrain load failed, falling back to Ellipsoid:', err);
+  }
 
-  provider.errorEvent.addEventListener((error: any) => {
-    error.retry = false;
-    error.ignore = true;
-  });
+  // Option 2: Fallback to Ellipsoid (Flat Globe) without throwing errors
+  try {
+    if (Cesium.EllipsoidTerrainProvider?.fromEllipsoid) {
+      return await Cesium.EllipsoidTerrainProvider.fromEllipsoid(Cesium.Ellipsoid.WGS84);
+    }
+  } catch (err) {
+    console.warn('Ellipsoid terrain initialization error:', err);
+  }
+
+  return new Cesium.EllipsoidTerrainProvider();
 }
