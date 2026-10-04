@@ -2,16 +2,15 @@ export interface BaseMapOption {
   id: string;
   name: string;
   category: 'map' | 'imagery';
-  type: 'osm' | 'urlTemplate' | 'usgs_wms';
+  type: 'osm' | 'urlTemplate';
   url?: string;
-  layerName?: string;
 }
 
 export interface OverlayOption {
   id: string;
   name: string;
-  type: 'urlTemplate' | 'wms';
+  type: 'urlTemplate';
   url: string;
-  layers?: string;
   visible: boolean;
+  alpha?: number;
 }

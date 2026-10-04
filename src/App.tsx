@@ -22,8 +22,15 @@ const MAP_OPTIONS: BaseMapOption[] = [
 
 const INITIAL_OVERLAYS: OverlayOption[] = [
   {
+    id: 'esri_transportation',
+    name: 'Esri Roads & Highways Network (Transparent)',
+    type: 'urlTemplate',
+    url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+    visible: true,
+  },
+  {
     id: 'esri_boundaries_places',
-    name: 'Esri Country Borders & Place Names',
+    name: 'Esri Borders & Place Names',
     type: 'urlTemplate',
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
     visible: true,
@@ -55,22 +62,26 @@ export default function App() {
     const viewer = viewerRef.current;
     if (!viewer || !Cesium) return;
 
+    // Purge base/imagery layers while preserving system initialization
     viewer.imageryLayers.removeAll(false);
 
     if (mode === 'map') {
+      // Vector Mode: Clean OSM Base
       const osmProvider = new Cesium.OpenStreetMapImageryProvider({
         url: 'https://tile.openstreetmap.org/',
       });
       viewer.imageryLayers.addImageryProvider(osmProvider, 0);
     } else {
-      // Tier 0: ArcGIS World Imagery Base
+      // Imagery Mode: Tier 0 Base + Tier 1 High-Res Regional Overlay
+      
+      // Tier 0: Global Esri World Imagery (100% Globe Coverage)
       const arcgisProvider = new Cesium.UrlTemplateImageryProvider({
         url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         maximumLevel: 19,
       });
       viewer.imageryLayers.addImageryProvider(arcgisProvider, 0);
 
-      // Tier 1: USGS NAIP High-Res Aerial Overlay (Fallback handling enabled)
+      // Tier 1: High-Detail USGS NAIP (Overlays Tier 0 where available)
       const usgsNaipProvider = new Cesium.WebMapServiceImageryProvider({
         url: 'https://imagery.nationalmap.gov/arcgis/services/USGSNAIPPlus/ImageServer/WMSServer',
         layers: 'USGSNAIPPlus',
@@ -79,15 +90,20 @@ export default function App() {
         tileDiscardPolicy: createBlankTileDiscardPolicy() as any,
       });
 
+      // Catch missing regional tiles (HTTP 404/500) and drop through to Tier 0
       attachFallbackErrorHandler(usgsNaipProvider);
       viewer.imageryLayers.addImageryProvider(usgsNaipProvider, 1);
     }
 
-    // Re-apply active raster overlays
+    // Re-apply transparent overlays on top of the selected base configuration
     overlayLayersRef.current.clear();
     overlays.forEach((overlay) => {
       if (overlay.visible && overlay.url) {
-        const provider = new Cesium.UrlTemplateImageryProvider({ url: overlay.url });
+        const provider = new Cesium.UrlTemplateImageryProvider({
+          url: overlay.url,
+          maximumLevel: 19,
+          hasAlphaChannel: true,
+        });
         const layer = viewer.imageryLayers.addImageryProvider(provider);
         overlayLayersRef.current.set(overlay.id, layer);
       }
@@ -115,7 +131,7 @@ export default function App() {
 
     viewerRef.current = viewer;
 
-    // Default to vector map mode on startup
+    // Initialize with vector map mode
     applyBaseLayerMode('map');
 
     return () => {
@@ -146,7 +162,11 @@ export default function App() {
         const nextVisibility = !overlay.visible;
 
         if (nextVisibility && overlay.url) {
-          const provider = new Cesium.UrlTemplateImageryProvider({ url: overlay.url });
+          const provider = new Cesium.UrlTemplateImageryProvider({
+            url: overlay.url,
+            maximumLevel: 19,
+            hasAlphaChannel: true,
+          });
           const layer = viewer.imageryLayers.addImageryProvider(provider);
           overlayLayersRef.current.set(id, layer);
         } else {
@@ -176,7 +196,7 @@ export default function App() {
       }}
     >
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Left Panel */}
+        {/* Left ORBAT Panel */}
         <div
           style={{
             width: dim.leftWidthPx,
@@ -193,7 +213,7 @@ export default function App() {
           <div style={{ fontSize: '13px', color: '#aaaaaa' }}>• Command Hierarchy</div>
         </div>
 
-        {/* Globe Viewport */}
+        {/* Spatial Viewport */}
         <div style={{ flex: 1, position: 'relative', background: '#000000', overflow: 'hidden' }}>
           <LayerPicker
             baseMaps={MAP_OPTIONS}
@@ -207,7 +227,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Bottom Panel */}
+      {/* Bottom Telemetry Log */}
       <div
         style={{
           height: dim.bottomHeightPx,
@@ -222,7 +242,7 @@ export default function App() {
           TELEMETRY LOG
         </h3>
         <div style={{ fontSize: '12px', fontFamily: 'monospace', color: '#0adb6b' }}>
-          [OK] OpenMilDB spatial framework initialized.
+          [OK] Multi-source layer stack online. Transparent reference overlays active.
         </div>
       </div>
     </div>
