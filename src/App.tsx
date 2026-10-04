@@ -9,8 +9,15 @@ import {
 
 const MAP_OPTIONS: BaseMapOption[] = [
   {
+    id: 'usgs_topo',
+    name: 'USGS Topographic Map (Elevation Lines)',
+    category: 'map',
+    type: 'urlTemplate',
+    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+  },
+  {
     id: 'osm',
-    name: 'OpenStreetMap (Vector Map)',
+    name: 'OpenStreetMap (Standard Vector)',
     category: 'map',
     type: 'osm',
     url: 'https://tile.openstreetmap.org/',
@@ -29,20 +36,13 @@ const INITIAL_OVERLAYS: OverlayOption[] = [
     name: 'Esri Roads & Highways Network',
     type: 'urlTemplate',
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
-    visible: true,
+    visible: false,
   },
   {
     id: 'esri_boundaries_places',
     name: 'Esri Borders & Place Names',
     type: 'urlTemplate',
     url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-    visible: true,
-  },
-  {
-    id: 'open_sea_map',
-    name: 'OpenSeaMap (Seamarks)',
-    type: 'urlTemplate',
-    url: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
     visible: false,
   },
 ];
@@ -54,13 +54,11 @@ export default function App() {
   });
 
   const viewerRef = useRef<any>(null);
-  const activeModeRef = useRef<'map' | 'imagery'>('map');
   const overlayLayersRef = useRef<Map<string, any>>(new Map());
 
-  const [activeBaseMapId, setActiveBaseMapId] = useState<string>('osm');
+  const [activeBaseMapId, setActiveBaseMapId] = useState<string>('usgs_topo');
   const [overlays, setOverlays] = useState<OverlayOption[]>(INITIAL_OVERLAYS);
 
-  // Terrain & Lighting State
   const [terrainEnabled, setTerrainEnabled] = useState<boolean>(true);
   const [sunlightEnabled, setSunlightEnabled] = useState<boolean>(false);
   const [hillshadingEnabled, setHillshadingEnabled] = useState<boolean>(true);
@@ -71,18 +69,12 @@ export default function App() {
     if (!viewer || viewer.isDestroyed() || !Cesium) return;
 
     const globe = viewer.scene.globe;
-
     globe.enableLighting = sunlightEnabled;
 
     if (sunlightEnabled) {
       globe.nightColor = new Cesium.Color(0.25, 0.25, 0.3, 1.0);
       globe.lightingFadeOutDistance = 10000000.0;
       globe.lightingFadeInDistance = 20000000.0;
-
-      if (viewer.scene.postProcessStages?.ambientOcclusion) {
-        viewer.scene.postProcessStages.ambientOcclusion.enabled = true;
-        viewer.scene.postProcessStages.ambientOcclusion.uniforms.intensity = 3.0;
-      }
     }
 
     globe.showGroundAtmosphere = hillshadingEnabled;
@@ -90,47 +82,49 @@ export default function App() {
     globe.dynamicAtmosphereLightingFromSun = sunlightEnabled && hillshadingEnabled;
   };
 
-  const applyBaseLayerMode = (mode: 'map' | 'imagery') => {
+  const applyBaseLayer = (mapOption: BaseMapOption) => {
     const Cesium = (window as any).Cesium;
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !Cesium) return;
 
     viewer.imageryLayers.removeAll(false);
 
-    if (mode === 'map') {
-      const osmProvider = new Cesium.OpenStreetMapImageryProvider({
+    let provider: any;
+
+    if (mapOption.id === 'usgs_topo') {
+      provider = new Cesium.UrlTemplateImageryProvider({
+        url: mapOption.url,
+        maximumLevel: 16,
+      });
+    } else if (mapOption.id === 'osm') {
+      provider = new Cesium.OpenStreetMapImageryProvider({
         url: 'https://tile.openstreetmap.org/',
         maximumLevel: 18,
       });
-
-      attachFallbackErrorHandler(osmProvider);
-      viewer.imageryLayers.addImageryProvider(osmProvider, 0);
     } else {
-      // Direct ArcGIS World Imagery (includes NAIP high-res imagery internally)
-      const arcgisProvider = new Cesium.UrlTemplateImageryProvider({
+      provider = new Cesium.UrlTemplateImageryProvider({
         url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         maximumLevel: 19,
       });
-      attachFallbackErrorHandler(arcgisProvider);
-      viewer.imageryLayers.addImageryProvider(arcgisProvider, 0);
     }
 
-    // Re-attach Overlays (Roads, Boundaries, etc.)
+    attachFallbackErrorHandler(provider);
+    viewer.imageryLayers.addImageryProvider(provider, 0);
+
+    // Re-attach active overlays
     overlayLayersRef.current.clear();
     overlays.forEach((overlay) => {
       if (overlay.visible && overlay.url) {
-        const provider = new Cesium.UrlTemplateImageryProvider({
+        const overlayProvider = new Cesium.UrlTemplateImageryProvider({
           url: overlay.url,
           maximumLevel: 18,
           hasAlphaChannel: true,
         });
-        attachFallbackErrorHandler(provider);
-        const layer = viewer.imageryLayers.addImageryProvider(provider);
+        attachFallbackErrorHandler(overlayProvider);
+        const layer = viewer.imageryLayers.addImageryProvider(overlayProvider);
         overlayLayersRef.current.set(overlay.id, layer);
       }
     });
-
-    activeModeRef.current = mode;
   };
 
   const updateTerrainState = async (enabled: boolean) => {
@@ -162,7 +156,7 @@ export default function App() {
           viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
         }
       } catch (err) {
-        console.warn('Ellipsoid terrain fallback error:', err);
+        console.warn('Ellipsoid fallback error:', err);
       }
 
       if (viewer.scene?.globe) {
@@ -190,7 +184,8 @@ export default function App() {
 
     viewerRef.current = viewer;
 
-    applyBaseLayerMode('map');
+    const initialMap = MAP_OPTIONS.find((m) => m.id === 'usgs_topo') || MAP_OPTIONS[0];
+    applyBaseLayer(initialMap);
     updateTerrainState(terrainEnabled);
 
     viewer.camera.setView({
@@ -218,7 +213,7 @@ export default function App() {
     const selected = MAP_OPTIONS.find((m) => m.id === id);
     if (!selected) return;
 
-    applyBaseLayerMode(selected.category);
+    applyBaseLayer(selected);
     setActiveBaseMapId(id);
   };
 
@@ -261,13 +256,8 @@ export default function App() {
     updateTerrainState(nextState);
   };
 
-  const handleToggleSunlight = () => {
-    setSunlightEnabled((prev) => !prev);
-  };
-
-  const handleToggleHillshading = () => {
-    setHillshadingEnabled((prev) => !prev);
-  };
+  const handleToggleSunlight = () => setSunlightEnabled((prev) => !prev);
+  const handleToggleHillshading = () => setHillshadingEnabled((prev) => !prev);
 
   const handleTiltChange = (deltaDegrees: number) => {
     const Cesium = (window as any).Cesium;
@@ -381,7 +371,7 @@ export default function App() {
           TELEMETRY LOG
         </h3>
         <div style={{ fontSize: '12px', fontFamily: 'monospace', color: '#0adb6b' }}>
-          [OK] Imagery and terrain providers ready.
+          [OK] USGS Topo layer active.
         </div>
       </div>
     </div>
